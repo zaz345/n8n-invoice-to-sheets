@@ -77,6 +77,26 @@ The extraction prompt is in the same node. To add a field, add it to the prompt'
 
 ---
 
+## Screenshots
+
+**Gmail Trigger** — the search query limits it to PDF attachments; the PDF arrives as binary `attachment_0`.
+
+![Gmail Trigger](docs/gmail-trigger.png)
+
+**LLM Extract** — the model returns one JSON object, which the next node parses.
+
+![LLM Extract](docs/llm-extract.png)
+
+**Append to Invoice Log** — three invoices, three suppliers, three currencies, one sheet.
+
+![Google Sheet](docs/google-sheet.png)
+
+**Email Confirmation** — the loop closes with a summary of what was written.
+
+![Confirmation email](docs/confirmation-email.png)
+
+---
+
 ## Limitations
 
 Stated plainly, because these are the questions a buyer will ask:
