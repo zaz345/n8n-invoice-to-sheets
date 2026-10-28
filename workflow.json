@@ -1,0 +1,299 @@
+{
+  "name": "Invoice Email to Google Sheets",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "event": "=messageReceived",
+        "simple": false,
+        "filters": {
+          "q": "has:attachment filename:pdf"
+        },
+        "options": {
+          "downloadAttachments": true
+        }
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        0
+      ],
+      "id": "4e0b69d1-4241-4555-9484-d63cd891ad0e",
+      "name": "Gmail Trigger",
+      "credentials": {
+        "gmailOAuth2": {
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. 模型返回的字符串\nconst raw = $json.choices?.[0]?.message?.content ?? \"\";\n\n// 2. 剥掉模型可能加的 ```json 围栏\nconst cleaned = raw.trim().replace(/^```(?:json)?\\s*/i, \"\").replace(/```$/, \"\").trim();\n\n// 3. 解析\nlet data;\ntry {\n  data = JSON.parse(cleaned);\n} catch (e) {\n  throw new Error(\"Model returned non-JSON: \" + raw.slice(0, 300));\n}\n\n// 4. 发件人：从 header 取，再只留尖括号里的邮箱地址\nconst g = $('Gmail Trigger').first().json ?? {};\nfunction getHeader(name) {\n  const cand = g?.payload?.headers ?? g?.headers;\n  if (Array.isArray(cand)) {\n    const hit = cand.find(h => String(h?.name ?? h?.Name ?? \"\").toLowerCase() === name);\n    return hit?.value ?? hit?.Value ?? \"\";\n  }\n  if (cand && typeof cand === \"object\") {\n    const k = Object.keys(cand).find(x => x.toLowerCase() === name);\n    return k ? String(cand[k]) : \"\";\n  }\n  return g?.from?.value?.[0]?.address ?? g?.from?.text ?? \"\";\n}\nconst rawFrom = getHeader(\"from\");\nconst m = String(rawFrom).match(/<([^>]+)>/);\nconst from = m ? m[1] : String(rawFrom).replace(/^From:\\s*/i, \"\").trim();\n\n// 5. 日期按北京时间算（服务器是 UTC，早上 8 点前会差一天）\nconst date = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);\n\nreturn [{\n  json: {\n    date,\n    from,\n    vendor: data.vendor ?? null,\n    invoice_no: data.invoice_no ?? null,\n    amount: data.amount ?? null,\n    currency: data.currency ?? null,\n    due_date: data.due_date ?? null,\n    summary: data.summary ?? null,\n  },\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        656,
+        16
+      ],
+      "id": "644379b4-aebd-48b3-8a05-7f218f1a2f61",
+      "name": "Parse"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "attachment_0",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.2,
+      "position": [
+        224,
+        0
+      ],
+      "id": "eb372e7d-6107-45e5-b57c-df86bb1eef7e",
+      "name": "Extract PDF Text"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"glm-4-flash\",\n  \"temperature\": 0.1,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You extract structured data from invoice text. Reply with exactly one JSON object and nothing else - no explanation, no markdown fences. Required keys: vendor (supplier name as written), invoice_no (as written), amount (total amount due, number only), currency (3-letter ISO code), due_date (YYYY-MM-DD), summary (one short English sentence on what was purchased). Use null only when a value is genuinely absent. Never invent values.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($json.text) }}\n    }\n  ]\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        432,
+        16
+      ],
+      "id": "088784eb-01cd-4a8f-8576-ae7d41eb3b79",
+      "name": "LLM Extract",
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_YOUR_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "sheet1"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "date",
+              "displayName": "date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "from",
+              "displayName": "from",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "vendor",
+              "displayName": "vendor",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "invoice_no",
+              "displayName": "invoice_no",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "amount",
+              "displayName": "amount",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "currency",
+              "displayName": "currency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "due_date",
+              "displayName": "due_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "summary",
+              "displayName": "summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        880,
+        16
+      ],
+      "id": "f7aa655f-3517-41e0-9e58-d31f276b92ae",
+      "name": "Append to Invoice Log",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "you@example.com",
+        "subject": "=Invoice logged: {{ $('Parse').first().json.invoice_no }} — {{ $('Parse').first().json.currency }} {{ Number($('Parse').first().json.amount).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) }}",
+        "message": "=<div style=\"font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;color:#111827;line-height:1.6\">   <p style=\"margin:0 0 12px\">A new invoice was processed and logged to the spreadsheet.</p>   <table cellpadding=\"6\" cellspacing=\"0\" style=\"border-collapse:collapse;font-size:13px\">     <tr><td style=\"color:#6b7280\">Vendor</td><td><b>{{ $('Parse').first().json.vendor }}</b></td></tr>     <tr><td style=\"color:#6b7280\">Invoice no.</td><td>{{ $('Parse').first().json.invoice_no }}</td></tr>     <tr><td style=\"color:#6b7280\">Amount</td><td><b>{{ $('Parse').first().json.currency }} {{ Number($('Parse').first().json.amount).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) }}</b></td>\n</tr>     <tr><td style=\"color:#6b7280\">Due date</td><td>{{ $('Parse').first().json.due_date }}</td></tr>     <tr><td style=\"color:#6b7280\">Summary</td><td>{{ $('Parse').first().json.summary }}</td></tr>   </table>   <p style=\"margin:14px 0 0;color:#6b7280;font-size:12px\">Logged automatically by the n8n invoice workflow.</p> </div>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1104,
+        16
+      ],
+      "id": "97fbda96-2359-4e85-8798-bc0da3ea1668",
+      "name": "Email Confirmation",
+      "webhookId": "f8a700b6-38c5-4c43-8ceb-d95f740e7015",
+      "credentials": {
+        "gmailOAuth2": {
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract PDF Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse": {
+      "main": [
+        [
+          {
+            "node": "Append to Invoice Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract PDF Text": {
+      "main": [
+        [
+          {
+            "node": "LLM Extract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Extract": {
+      "main": [
+        [
+          {
+            "node": "Parse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append to Invoice Log": {
+      "main": [
+        [
+          {
+            "node": "Email Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "nodeGroups": [],
+  "tags": []
+}

@@ -1,0 +1,4 @@
+# PDF 是二进制，禁止换行符转换（否则仓库里的样例文件会被 CRLF 破坏）
+*.pdf binary
+*.png binary
+*.jpg binary

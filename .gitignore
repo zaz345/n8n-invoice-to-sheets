@@ -1,0 +1,6 @@
+# 本地原始导出（未脱敏，含私人邮箱和表格 ID，不公开）
+Invoice Email to Google Sheets.json
+
+__pycache__/
+*.pyc
+.DS_Store
